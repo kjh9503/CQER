@@ -206,8 +206,7 @@ class KGReasoning(nn.Module):
                 self.entity_embedding[-num_users:,:] = torch.from_numpy(self.user_pre_embed) 
                 self.entity_embedding = nn.Parameter(self.entity_embedding)
                 
-        self.relation_embedding = nn.Parameter(torch.zeros(nrelation*num_clusters, self.relation_dim))
-        print('relation_embedding shape:',self.relation_embedding.shape)
+        self.relation_embedding = nn.Parameter(torch.zeros(nrelation, self.relation_dim))
 
         nn.init.uniform_(
             tensor=self.relation_embedding, 
