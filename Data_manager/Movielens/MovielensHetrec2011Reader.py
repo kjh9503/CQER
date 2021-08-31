@@ -46,15 +46,13 @@ class MovielensHetrec2011Reader(DataReader):
             dataFile = zipfile.ZipFile(zipFile_path + "hetrec2011-movielens-2k-v2.zip")
 
 
-        URM_path = dataFile.extract("user_ratedmovies-timestamps.dat", path=zipFile_path + "decompressed/")
+        URM_path = dataFile.extract("user_ratedmovies.dat", path=zipFile_path + "decompressed/")
 
 
-        URM_all, URM_timestamp, item_original_ID_to_index, user_original_ID_to_index = load_CSV_into_SparseBuilder(URM_path,
-                                                                                                    header=True,
+        URM_all, item_original_ID_to_index, user_original_ID_to_index = load_CSV_into_SparseBuilder(URM_path,
                                                                                                     separator="\t",
-                                                                                                    timestamp = True, 
-                                                                                                    remove_duplicates = True,
-                                                                                                    custom_user_item_rating_columns = [0, 1, 2, 3])
+                                                                                                    header=True,
+                                                                                                    custom_user_item_rating_columns = [0, 1, 2])
 
 
         loaded_URM_dict = {"URM_all": URM_all}

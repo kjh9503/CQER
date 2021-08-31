@@ -56,7 +56,7 @@ class DataSplitter_leave_k_out(_DataSplitter):
     SPLIT_GLOBAL_MAPPER_DICT = None
 
 
-    def __init__(self, dataReader_object:_DataReader, k_out_value = 1, forbid_new_split = False, force_new_split = False, use_validation_set = True, leave_random_out = False):
+    def __init__(self, dataReader_object:_DataReader, k_out_value = 1, forbid_new_split = False, force_new_split = False, use_validation_set = True, leave_random_out = True):
         """
 
         :param dataReader_object:
@@ -70,11 +70,11 @@ class DataSplitter_leave_k_out(_DataSplitter):
 
         self.k_out_value = k_out_value
         self.use_validation_set = use_validation_set
-        self.allow_cold_users = True
+        self.allow_cold_users = False
         self.removed_cold_users = None
         self.leave_random_out = leave_random_out
 
-        self._print("Cold users allowed")
+        self._print("Cold users not allowed")
 
         super(DataSplitter_leave_k_out, self).__init__(dataReader_object, forbid_new_split=forbid_new_split, force_new_split=force_new_split)
 

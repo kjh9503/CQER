@@ -7,7 +7,6 @@ Created on 26/11/19
 """
 
 import pandas as pd
-from collections import defaultdict
 
 
 
@@ -41,20 +40,6 @@ def _loadURM_preinitialized_item_id (filePath, header = False, separator="::",
 
     # Remove data with rating non valid
     df_original.drop(df_original[df_original.rating == 0.0].index, inplace=True)
-    
-    # num_interactions 
-    num_interactions_limit = 5
-    num_interactions_per_user = defaultdict(int)
-    drop_rows = []
-    df_original.sort_values(by=['timestamp'], inplace=True)
-    print('Before deletion:',len(df_original.index))
-    for idx in reversed(df_original.index):
-        userid = df_original.loc[idx, 'userId']
-        num_interactions_per_user[userid] += 1
-        if num_interactions_per_user[userid] > num_interactions_limit:
-            drop_rows.append(idx)
-    df_original.drop(drop_rows, inplace=True)
-    print('After deletion:',len(df_original.index))
 
     user_id_list = df_original['userId'].values
     item_id_list = df_original['movieId'].values

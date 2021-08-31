@@ -7,7 +7,6 @@ Created on 22/11/18
 """
 
 import numpy as np
-from collections import defaultdict
 import time, sys, os
 from Base.Recommender_utils import check_matrix
 import  scipy.sparse as sps
@@ -94,7 +93,7 @@ from Data_manager.IncrementalSparseMatrix import IncrementalSparseMatrix
 import pandas as pd
 
 
-def load_CSV_into_SparseBuilder (filePath, header = False, separator="::", timestamp = True, remove_duplicates = True,
+def load_CSV_into_SparseBuilder (filePath, header = False, separator="::", timestamp = False, remove_duplicates = False,
                                  custom_user_item_rating_columns = None):
 
     URM_all_builder = IncrementalSparseMatrix(auto_create_col_mapper = True, auto_create_row_mapper = True)
@@ -113,20 +112,7 @@ def load_CSV_into_SparseBuilder (filePath, header = False, separator="::", times
 
     # If the original file has more columns, keep them but ignore them
     df_original.columns = columns
-    
-    # num_interactions 
-    num_interactions_limit = 5
-    num_interactions_per_user = defaultdict(int)
-    drop_rows = []
-    df_original.sort_values(by=['timestamp'], inplace=True)
-    print('Before deletion:',len(df_original.index))
-    for idx in reversed(df_original.index):
-        userid = df_original.loc[idx, 'userId']
-        num_interactions_per_user[userid] += 1
-        if num_interactions_per_user[userid] > num_interactions_limit:
-            drop_rows.append(idx)
-    df_original.drop(drop_rows, inplace=True)
-    print('After deletion:',len(df_original.index))
+
 
     user_id_list = df_original['userId'].values
     item_id_list = df_original['itemId'].values
@@ -156,7 +142,7 @@ def load_CSV_into_SparseBuilder (filePath, header = False, separator="::", times
 
             df_original.sort_values(by=sort_by, ascending=True, inplace=True, kind="quicksort", na_position="first")
             df_original.drop_duplicates(["userId", "itemId"], keep='last', inplace=True)
-            
+
             user_id_list = df_original['userId'].values
             item_id_list = df_original['itemId'].values
             interaction_list = df_original['interaction'].values
