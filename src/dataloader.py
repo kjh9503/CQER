@@ -9,7 +9,7 @@ import torch
 
 from torch.utils.data import Dataset, IterableDataset
 import random
-from kgreasoning.util import list2tuple, tuple2list, flatten
+from src.util import list2tuple, tuple2list, flatten
 
 class TrainDataset(Dataset):
     def __init__(self, queries, nentity, nitems, nrelation, negative_sample_size, answer):
@@ -231,7 +231,6 @@ class TestDataset(Dataset):
         
 class TestDataset(IterableDataset):
     def __init__(self, test_answers, users_paths, nentity, nitems, nrelation):
-        #self.path_samples_num = 50
         self.test_answers = test_answers
         self.users_paths = users_paths
         self.nentity = nentity
@@ -246,20 +245,15 @@ class TestDataset(IterableDataset):
         }
         
     def __len__(self):
-        return len(self.test_answers)
+        return len(self.users_paths)
         
     def __iter__(self):
         # cold start user
-        
         for user in self.test_answers:
-            #length = len(self.users_paths[user])
-            #if length > self.path_samples_num:
-            #    batch = random.sample(self.users_paths[user], self.path_samples_num)
-            #else:
-            
             if user in self.users_paths: # regular and sparse users
                 batch = self.users_paths[user]
-            else: # cold users
+            else: 
+                #continue
                 batch = [(0,)]
             query, query_structure = self.query_gen(user, batch, self.query_dict)
 
@@ -269,18 +263,6 @@ class TestDataset(IterableDataset):
             negative_sample = torch.LongTensor(range(self.nentity))
             
             yield negative_sample, flatten(query), query, query_structure
-        """
-        for user in self.users_paths:
-            batch = [(0,), (0, 2, 6), (0, 3, 7), (0, 5, 9), (0, 1, 0), (0, 4, 8)]
-            query, query_structure = self.query_gen(user, batch, self.query_dict)
-
-            #query = tuple([user, tuple([0])])
-            #query_structure =  tuple(['e', tuple('r')])
-         
-            negative_sample = torch.LongTensor(range(self.nentity))
-            
-            yield negative_sample, flatten(query), query, query_structure
-        """
             
     @staticmethod
     def collate_fn(data):

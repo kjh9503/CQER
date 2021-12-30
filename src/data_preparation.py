@@ -8,12 +8,12 @@ RATING_FILE_NAME = dict(
     {
         "BookCrossing": "BX-Book-Ratings.csv",
         "LastFM": "user_artists.dat",
-        "MovieLens": "ratings.dat",
+        "MovieLens_20M": "ratings.csv",
     }
 )
 
-SEP = dict({"BookCrossing": ";", "LastFM": "\t", "MovieLens": "::"})
-THRESHOLD = dict({"BookCrossing": 0, "LastFM": 0, "MovieLens": 0})
+SEP = dict({"BookCrossing": ";", "LastFM": "\t", "MovieLens_20M": ","})
+THRESHOLD = dict({"BookCrossing": 0, "LastFM": 0, "MovieLens_20M": 4})
 
 
 def read_item_index_to_entity_id_file():
@@ -76,10 +76,10 @@ def convert_rating():
         user_index = user_index_old2new[user_index_old]
 
         for item in pos_item_set:
-            writer.write("%d\t%d\t1\n" % (user_index, item))
+            writer.write("%d\t%d\n" % (user_index, item))
             rating = int(user_item_raw_rating[(user_index_old, item)])
             raw_rating_writer.write("%d\t%d\t%d\n" % (user_index, item, rating))
-
+        """
         unwatched_set = item_set - pos_item_set
         if user_index_old in user_neg_ratings:
             unwatched_set -= user_neg_ratings[user_index_old]
@@ -92,14 +92,13 @@ def convert_rating():
             neg_items = list(unwatched_set)
         for item in neg_items:
             writer.write("%d\t%d\t0\n" % (user_index, item))
-
+        """
     writer.close()
     raw_rating_writer.close()
 
     ratings_np = np.loadtxt(save_path, dtype=np.int64)
     print("number of users: %d" % user_cnt)
     print("number of items: %d" % len(item_set))
-
 
 def convert_kg():
     print("converting kg file ...")
@@ -151,7 +150,7 @@ if __name__ == "__main__":
     np.random.seed(2022)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-dataset", type=str, default="movie", help="which dataset to preprocess")
+    parser.add_argument("--dataset", type=str, default="movie", help="which dataset to preprocess")
     args = parser.parse_args()
     DATASET = args.dataset
 
@@ -167,10 +166,8 @@ if __name__ == "__main__":
     
     rating_file = '../data/' + args.dataset + '/ratings_final.txt'
     all_rating_np = np.loadtxt(rating_file, dtype=np.int64)
-
-    all_rating_np = all_rating_np[all_rating_np[:, 2] == 1]
+    
     rating_np, test_data = split_data(all_rating_np)
-    #rating_np = rating_np[rating_np[:, 2] == 1]
     train_data, valid_data = split_data(rating_np)
     
     data_dir = '../data/' + args.dataset

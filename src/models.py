@@ -10,8 +10,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from kgreasoning.dataloader import TestDataset, TrainDataset, SingledirectionalOneShotIterator
-from kgreasoning.util import dcg_at_k, ndcg_at_k
+from src.dataloader import TestDataset, TrainDataset, SingledirectionalOneShotIterator
+from src.util import dcg_at_k, ndcg_at_k
 import random
 import pickle
 import math
@@ -23,7 +23,7 @@ import os
 import json
 from sklearn.cluster import AffinityPropagation
 from sklearn.cluster import KMeans
-#from kgreasoning.finch import FINCH
+#from finch import FINCH
 
 def Identity(x):
     return x
@@ -243,7 +243,7 @@ class KGReasoning(nn.Module):
         elif self.geo == 'beta':
             
             if self.use_pretraining == 1:
-                
+                print('pretrain')
                 pretrain_path = self.pretrain_embedding_dir
                 pretrain_data = np.load(pretrain_path)
                 self.item_pre_embed = pretrain_data['item_embed']
@@ -254,21 +254,6 @@ class KGReasoning(nn.Module):
                 #assert self.user_pre_embed.shape[1] == self.entity_dim
                 #assert self.item_pre_embed.shape[1] == self.entity_dim
 
-                # TODO: clustering
-                #######################################################
-                #clustering = AffinityPropagation(random_state=5).fit(self.user_pre_embed)
-                #clustering = KMeans(n_clusters=self.nclusters, random_state=5).fit(self.user_pre_embed)
-                #self.user_clusters = clustering.labels_
-                #self.nclusters = clustering.cluster_centers_indices_.shape[0]
-                #print('num cluster:',self.nclusters)
-                #c, num_clust, req_c = FINCH(self.user_pre_embed)
-                #print('c:',c)
-                #print('num_clust:',num_clust)
-                #print('req_c:',req_c)
-                #######################################################
-                
-                """
-                #concat = np.concatenate((self.item_pre_embed, self.user_pre_embed), axis=0)
                 self.item_pre_embed = (self.item_pre_embed - self.item_pre_embed.min()) / (self.item_pre_embed.max() - self.item_pre_embed.min())
                 self.user_pre_embed = (self.user_pre_embed - self.user_pre_embed.min()) / (self.user_pre_embed.max() - self.user_pre_embed.min())
 
@@ -279,16 +264,12 @@ class KGReasoning(nn.Module):
                 alpha = self.user_pre_embed*10
                 beta = 10 - alpha
                 self.user_pre_embed = np.concatenate((alpha, beta), axis=1)
-                """
+          
                 
                 self.entity_embedding = torch.zeros(nentity, self.entity_dim * 2) # alpha and beta
-                #self.relation_embedding = torch.zeros(self.nrelation+self.nclusters*2, self.relation_dim)
                 self.entity_embedding[:self.nitems,:] = torch.from_numpy(self.item_pre_embed) 
                 self.entity_embedding[self.nitems:,:] = torch.from_numpy(self.user_pre_embed) 
-                #self.relation_embedding = nn.Parameter(self.relation_embedding)
                 self.entity_embedding = nn.Parameter(self.entity_embedding)
-                #print('relation embedding shape', self.relation_embedding.shape)
-                #print('entity_embedding embedding shape', self.entity_embedding.shape)
                 
                 if self.use_clustering:
 
@@ -897,16 +878,6 @@ class KGReasoning(nn.Module):
             'loss': loss.item(),
         }
         
-        """
-        self.center_net = BetaIntersection(self.entity_dim)
-            self.projection_net = BetaProjection(self.entity_dim * 2, 
-                                             self.relation_dim, 
-                                             hidden_dim, 
-                                             self.projection_regularizer, 
-                                             num_layers)
-        self.aggregate3p_net = BetaAggregate3p(self.entity_dim)
-        """
-            
         
         return log
 
@@ -917,7 +888,6 @@ class KGReasoning(nn.Module):
         step = 0
         total_steps = len(test_dataloader)
         logs = collections.defaultdict(list)
-        
         with torch.no_grad():
             # test query 수 만큼 iterate
             for negative_sample, queries, queries_unflatten, query_structures in tqdm(test_dataloader, disable=not args.print_on_screen):
@@ -941,7 +911,7 @@ class KGReasoning(nn.Module):
                 query_structures = [query_structures[i] for i in idxs]
 
                 query = queries_unflatten[0]
-                if isinstance(query[0],int): # path queries
+                if isinstance(query[0],np.integer): # path queries
                     user = query[0]
                 else: # intersection queries
                     user = query[0][0]
@@ -950,19 +920,14 @@ class KGReasoning(nn.Module):
                     print('user',user,'not available')
                     continue
                 answer = list(answers[user])
-                
-                # 나중에 이 코드 고치자!!!!
-                for ans in answer:
-                    ans -= args.start_item     
 
                 num_answer = len(answer)
                 answer = set(answer)
                 
                 ######################################
-                negative_logit = negative_logit[:,args.start_item:args.start_item+args.nitems]
+                negative_logit = negative_logit[:,0:args.nitems]
                 if user in total_train_interactions:
                     negative_logit[:,total_train_interactions[user]] = float("-inf")
-                
                 ######################################
 
                 argsort = torch.argsort(negative_logit, dim=1, descending=True)[0].detach().cpu().tolist()
@@ -1001,7 +966,7 @@ class KGReasoning(nn.Module):
                 #K = args.K 
                 #cur_ranking = cur_ranking - answer_list + 1 # filtered setting
                 #mrr = torch.mean(1./cur_ranking).item()
-                K_list = [5,10,20,50,100]
+                K_list = [10,5,20,50,100]
                 hits = []
                 precision = []
                 recall = []
@@ -1076,9 +1041,10 @@ class KGReasoning(nn.Module):
 
                 if step % args.test_log_steps == 0:
                     logging.info('Evaluating the model... (%d/%d)' % (step, total_steps))
+                    #logging.info('Evaluating the model... (%d)' % (step))
 
                 step += 1
-
+        print(step)
         metrics = collections.defaultdict(lambda: collections.defaultdict(int))
         for user in logs:
             for metric in logs[user][0].keys():
