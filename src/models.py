@@ -863,7 +863,7 @@ class KGReasoning(nn.Module):
         positive_sample_loss /= subsampling_weight.sum()
         negative_sample_loss /= subsampling_weight.sum()
 
-        l2_reg = torch.tensor(0.).to('cuda:0')
+        l2_reg = torch.tensor(0.).cuda()
         for p in model.parameters():
             if p.requires_grad:
                 l2_reg += torch.norm(p)
@@ -963,6 +963,7 @@ class KGReasoning(nn.Module):
                 cur_ranking, indices = torch.sort(cur_ranking)
                 #######################################
                 """
+
                 #K = args.K 
                 #cur_ranking = cur_ranking - answer_list + 1 # filtered setting
                 #mrr = torch.mean(1./cur_ranking).item()
@@ -1044,7 +1045,7 @@ class KGReasoning(nn.Module):
                     #logging.info('Evaluating the model... (%d)' % (step))
 
                 step += 1
-        print(step)
+
         metrics = collections.defaultdict(lambda: collections.defaultdict(int))
         for user in logs:
             for metric in logs[user][0].keys():

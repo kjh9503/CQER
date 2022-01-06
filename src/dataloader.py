@@ -245,7 +245,7 @@ class TestDataset(IterableDataset):
         }
         
     def __len__(self):
-        return len(self.users_paths)
+        return len(self.test_answers)
         
     def __iter__(self):
         # cold start user
