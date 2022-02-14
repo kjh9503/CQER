@@ -6,10 +6,7 @@ from collections import defaultdict
 import pandas as pd
 from tqdm import tqdm
 import networkx as nx
-import concurrent.futures
-#import random
-#import dgl
-#import sys
+import random
 
 query_dict = {
     '1p' : ('e',('r',)),
@@ -19,6 +16,37 @@ query_dict = {
     '5p' : ('e', ('r', 'r', 'r', 'r', 'r')),
 }
 
+def _all_simple_paths_graph(G, source, targets, cutoff, path_num):
+    found = 0
+    visited = dict.fromkeys([source])
+    stack = [iter(G[source])]
+    targets = set(targets)
+    while stack:
+        children = stack[-1]
+        child = next(children, None)
+        if child is None:
+            stack.pop()
+            visited.popitem()
+        elif len(visited) < cutoff:
+            if child in visited:
+                continue
+            if child in targets:
+                found += 1
+                yield list(visited) + [child]
+            visited[child] = None
+            if targets - set(visited.keys()):  # expand stack until find all targets
+                stack.append(iter(G[child]))
+            else:
+                visited.popitem()  # maybe other ways to child
+        else:  # len(visited) == cutoff:
+            for target in (targets & (set(children) | {child})) - set(visited.keys()):
+                found += 1
+                yield list(visited) + [target]
+            stack.pop()
+            visited.popitem()
+        if path_num != -1 and found > path_num:
+            break
+            
 def load_cf(filename):
     user = []
     item = []
@@ -36,168 +64,67 @@ def load_cf(filename):
     user = np.array(user, dtype=np.int32)
     item = np.array(item, dtype=np.int32)
     return (user, item), user_dict
-    
-def split_query_and_answer(train_user_dict, split):
-    
-    figure = ['Answer']*5
-    figure[split] = 'Query'
-    print('Split {0} : [{1}|{2}|{3}|{4}|{5}]'.format(split, *figure))
-    
-    train_query_dict = defaultdict(list)
-    train_answer_dict = defaultdict(list)
-    train_query_users = []
-    train_query_items = []
-    for user, items in train_user_dict.items():
-        if len(items) < 5:
-            if len(items) == 1:
-                #continue
-                #query_items = items
-                query_items = []
-                answer_items = items
-            else :
-                if split < len(items):
-                    query_items = [items[split]]
-                    answer_items = list(set(items)-set(query_items))
-                else:
-                    query_items = [items[-1]]
-                    answer_items = items[:-1]
-        else:       
-            if split == 0:
-                answer_split = int(len(items)*0.2)
-                answer_items = items[answer_split:]
-                query_items = items[:answer_split]
-            elif split == 1:
-                answer_split1 = int(len(items)*0.2)
-                answer_split2 = int(len(items)*0.4)
-                answer_items = items[:answer_split1] + items[answer_split2:]
-                query_items = items[answer_split1:answer_split2]
-            elif split == 2:
-                answer_split1 = int(len(items)*0.4)
-                answer_split2 = int(len(items)*0.6)
-                answer_items = items[:answer_split1] + items[answer_split2:]
-                query_items = items[answer_split1:answer_split2]
-            elif split == 3:
-                answer_split1 = int(len(items)*0.6)
-                answer_split2 = int(len(items)*0.8)
-                answer_items = items[:answer_split1] + items[answer_split2:]
-                query_items = items[answer_split1:answer_split2]
-            elif split == 4:
-                split_ind = int(len(items)*0.8)
-                answer_items = items[:split_ind]
-                query_items = items[split_ind:]
-        for item in query_items:
-            train_query_users.append(user)
-            train_query_items.append(item)
-        train_query_dict[user] = query_items
-        train_answer_dict[user] = answer_items 
-    train_query_users = np.array(train_query_users, dtype=np.int32)
-    train_query_items = np.array(train_query_items, dtype=np.int32)
-    return (train_query_users, train_query_items), train_query_dict, train_answer_dict
 
-def extract_paths(split):
+def mine_paths(g, train_answer_dict, path_num, hop):
     global n_users
     global n_entities
-    global train_user_dict
-    global valid_user_dict
-    global test_user_dict
-    global kg_data
-
-    # split train interactions into interactions for 1) query and its 2) answer
-    cf_train_data, train_query_dict, train_answer_dict = split_query_and_answer(train_user_dict, split)
-
-    # construct Collaborative KG
-    cf_train_data = (np.array(list(map(lambda d: d + n_entities, cf_train_data[0]))).astype(np.int32), cf_train_data[1].astype(np.int32))
-    train_answer_dict = {k + n_entities: np.unique(v).astype(np.int32) for k, v in train_answer_dict.items()}
-
-    # add interactions to kg data
-    cf2kg_train_data = pd.DataFrame(np.zeros((len(cf_train_data[0]), 3), dtype=np.int32), columns=['h', 'r', 't'])
-    cf2kg_train_data['h'] = cf_train_data[0]
-    cf2kg_train_data['t'] = cf_train_data[1]
-    reverse_cf2kg_train_data = pd.DataFrame(np.ones((len(cf_train_data[0]), 3), dtype=np.int32), columns=['h', 'r', 't'])
-    reverse_cf2kg_train_data['h'] = cf_train_data[1]
-    reverse_cf2kg_train_data['t'] = cf_train_data[0]
-    kg_train_data = pd.concat([kg_data, cf2kg_train_data, reverse_cf2kg_train_data], ignore_index=True)
-
-    # construct kg dict
-    train_kg_dict = defaultdict(list)
-    train_relation_dict = defaultdict(list)
-    for row in kg_train_data.iterrows():
-        h, r, t = row[1]
-        train_kg_dict[h].append((t, r))
-        train_relation_dict[r].append((h, t))
     
-    g = nx.DiGraph()
-    g.add_nodes_from(list(range(0,n_users + n_entities)))
-        
-    #################################################################################
+    train_queries = defaultdict(set)
+    train_answers = defaultdict(set)
+    test_queries = defaultdict(set)
 
-    for r, nodes in train_relation_dict.items():
-        g.add_edges_from(list(nodes), rel=r)
-    """
-    # Sample edges
-    for r, nodes in train_relation_dict.items():
-        if r==0 or r==1:
-            continue
-        g.add_edges_from(list(nodes), rel=r)
-    dgl_g = dgl.from_networkx(g, edge_attrs=['rel'])  
-    print('Before sampling, # of edges:',dgl_g.number_of_edges())
-    dgl_sg = dgl.sampling.sample_neighbors(dgl_g, list(range(0,n_users + n_entities)), fanout=32)
-    print('After sampling, # of edges:',dgl_sg.number_of_edges())
-    g = dgl.to_networkx(dgl_sg, edge_attrs=['rel'])
-    g = nx.DiGraph(g)
-
-    for r, nodes in train_relation_dict.items():
-        if r==0 or r==1:
-            g.add_edges_from(list(nodes), rel=r)
-            """
-    #################################################################################
-    
-    train_queries = defaultdict(list)
-    train_answers = defaultdict(list)
-    users_paths = defaultdict(list)
-
-    print('Extracting paths for split'+str(split)+'...')
-    
-    # 1p
-    for user, items in train_answer_dict.items():
-        if len(items) == 0:
-            print('len(items) == 0!!')
-        query = tuple([user,tuple([0])])
-        train_queries[('e', ('r',))].append(query)
-        train_answers[query] = items 
-    
-    # 3p
     for user in tqdm(train_answer_dict.keys()):
-        paths = list(nx.all_simple_edge_paths(g, source=user, target=train_answer_dict[user], cutoff=3))
-        
-        #path_size = len(paths)
-        #sample_size = 5
-        #if path_size > sample_size:
-        #    random.shuffle(paths)
-        #    paths = paths[:sample_size]
-        
-        for path in paths:
-            if len(path) == 1:
-                print(path)
-                continue
-            query_structure = query_dict[str(len(path))+'p']
-            rel_list = []
-            for i in range(len(path)):
-                rel_list.append(g[path[i][0]][path[i][1]]['rel'])
-            query = tuple([user,tuple(rel_list)])
-            train_queries[query_structure].append(query)
-            train_answers[query].append(path[-1][1])
-        
-    
+        for item in train_answer_dict[user]:
+            intersection_query = set()
+            for simp_path in _all_simple_paths_graph(g, source=user, targets=[item], cutoff=hop, path_num=path_num):
+                user_idx = user - (n_entities-n_items) # adjust index of user
+                path = list(zip(simp_path[:-1], simp_path[1:]))
+                query_structure = query_dict[str(len(path))+'p']
+                rel_list = []
+                for i in range(len(path)):
+                    rel_list.append(g[path[i][0]][path[i][1]]['rel'])
+                query = tuple([user_idx,tuple(rel_list)])
+                intersection_query.add(query)
+                train_queries[query_structure].add(query)
+                train_answers[query].add(item)
+            if len(intersection_query) > 1:
+                query = tuple(sorted(intersection_query, key=lambda x:len(x[1])))
+                query_structure = []
+                for q in query:
+                    query_structure.append(query_dict[str(len(q[1]))+'p'])
+                query_structure = tuple(sorted(query_structure, key=lambda x:len(x[1])))
+                train_queries[query_structure].add(query)
+                train_answers[query].add(item)
+                
+    users_paths = defaultdict(list)
     for query in train_answers.keys():
-        users_paths[query[0]].append(query[1])
+        if isinstance(query[0],np.integer): # path queries
+            user = query[0]
+            relations = query[1]
+            users_paths[user].append(relations)
+            
+    for user in train_answer_dict.keys(): 
+        user_idx = user - (n_entities-n_items) # adjust index of user
+        batch = users_paths[user_idx]
+        if len(batch) == 1: # path queries
+            query = tuple([user_idx, batch[0]])
+            query_structure = query_dict[str(len(batch[0]))+'p']
+        else: # intersection queries
+            q_structure_list = []
+            q_list = []
+            for q in batch:
+                q_list.append(tuple([user_idx, tuple(q)]))
+                q_structure_list.append(query_dict[str(len(q))+'p'])
+            query = tuple(sorted(q_list, key=lambda x:len(x[1])))
+            query_structure = tuple(sorted(q_structure_list, key=lambda x:len(x[1])))
+        test_queries[query_structure].add(query)
 
+    """      
     # Change lists to sets
     for key in train_queries.keys():
         train_queries[key] = set(train_queries[key])
     for key in train_answers.keys():
         train_answers[key] = set(train_answers[key])
-
 
     # get rid of entities id 
     new_train_answers = defaultdict(list)
@@ -215,19 +142,24 @@ def extract_paths(split):
     for user, paths in users_paths.items():
         user = int(user)-(n_entities-n_items)
         new_users_paths[user] = paths
-
-    return (new_train_queries, new_train_answers, new_users_paths)
+    
+    return new_train_queries, new_train_answers, new_users_paths
+    """
+    return train_queries, train_answers, test_queries
 
 if __name__ == "__main__":
     np.random.seed(2022)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=str, default="BookCrossing", help="which dataset to preprocess")
-    parser.add_argument("--num_split", type=int, default="5", help="number of splits")
+    parser.add_argument("--dataset", type=str, default="new_BookCrossing", help="which dataset to preprocess")
+    parser.add_argument("--path_num", type=int, default=-1, help="number of paths to mine. If -1, mine all possible paths")
+    parser.add_argument("--hop", type=int, default=3, help="number of hops")
     args = parser.parse_args()
     
     # read rating file
     data_dir = '../data/' + args.dataset
+    path_num = args.path_num
+    hop = args.hop
     train_file = os.path.join(data_dir, 'train.txt')
     valid_file = os.path.join(data_dir, 'valid.txt')
     test_file = os.path.join(data_dir, 'test.txt')
@@ -235,17 +167,14 @@ if __name__ == "__main__":
     cf_valid_data, valid_user_dict = load_cf(valid_file)
     cf_test_data, test_user_dict = load_cf(test_file)
     
-    # number of users and items
-    n_users = max(max(max(cf_train_data[0]), max(cf_valid_data[0])), max(cf_test_data[0])) + 1
-    n_items = max(max(max(cf_train_data[1]), max(cf_valid_data[1])), max(cf_test_data[1])) + 1
-    print('number of users:',n_users)
-    print('number of items:',n_items)
-    
     # read KG file
     kg_file = os.path.join(data_dir, 'kg_final.txt')
     kg_data = pd.read_csv(kg_file, sep='\t', names=['h', 'r', 't'], engine='python')
     kg_data = kg_data.drop_duplicates()
+    n_users = max(max(max(cf_train_data[0]), max(cf_valid_data[0])), max(cf_test_data[0])) + 1
+    n_items = max(max(max(cf_train_data[1]), max(cf_valid_data[1])), max(cf_test_data[1])) + 1
     n_relations = max(kg_data['r']) + 1
+    
     reverse_kg_data = kg_data.copy()
     reverse_kg_data = reverse_kg_data.rename({'h': 't', 't': 'h'}, axis='columns')
     reverse_kg_data['r'] += n_relations
@@ -253,30 +182,57 @@ if __name__ == "__main__":
     kg_data['r'] += 2
     n_relations = max(kg_data['r']) + 1
     n_entities = max(max(kg_data['h']), max(kg_data['t'])) + 1
+    n_cf_train = len(cf_train_data[0])
+    
+    print('number of users:',n_users)
+    print('number of items:',n_items)
     print('number of relations:',n_relations)
     print('number of entities:',n_entities)
     
-    train_queries_list = []
-    train_answers_list = []
-    users_paths_list = []
-    print('Total '+str(args.num_split)+' Splits')
-    splits = [split for split in range(args.num_split)]
-    
-    with concurrent.futures.ProcessPoolExecutor() as executor:
-        for result in executor.map(extract_paths, splits):
-            train_queries_list.append(result[0])
-            train_answers_list.append(result[1])
-            users_paths_list.append(result[2])
-    
+    # construct Collaborative KG
+    cf_train_data = (np.array(list(map(lambda d: d + n_entities, cf_train_data[0]))).astype(np.int32), cf_train_data[1].astype(np.int32))
+    train_answer_dict = {k + n_entities: np.unique(v).astype(np.int32) for k, v in train_user_dict.items()}
     train_user_dict = {k + n_items: np.unique(v).astype(np.int32) for k, v in train_user_dict.items()}
     valid_user_dict = {k + n_items: np.unique(v).astype(np.int32) for k, v in valid_user_dict.items()}
     test_user_dict = {k + n_items: np.unique(v).astype(np.int32) for k, v in test_user_dict.items()}
+
+    # add interactions to kg data
+    cf2kg_train_data = pd.DataFrame(np.zeros((n_cf_train, 3), dtype=np.int32), columns=['h', 'r', 't'])
+    cf2kg_train_data['h'] = cf_train_data[0]
+    cf2kg_train_data['t'] = cf_train_data[1]
+    reverse_cf2kg_train_data = pd.DataFrame(np.ones((n_cf_train, 3), dtype=np.int32), columns=['h', 'r', 't'])
+    reverse_cf2kg_train_data['h'] = cf_train_data[1]
+    reverse_cf2kg_train_data['t'] = cf_train_data[0]
+    kg_train_data = pd.concat([kg_data, cf2kg_train_data, reverse_cf2kg_train_data], ignore_index=True)
+
+    # construct kg dict
+    train_kg_dict = defaultdict(list)
+    train_relation_dict = defaultdict(list)
+    for row in kg_train_data.iterrows():
+        h, r, t = row[1]
+        train_kg_dict[h].append((t, r))
+        train_relation_dict[r].append((h, t))
+
+    # construct kg dict
+    train_kg_dict = defaultdict(list)
+    train_relation_dict = defaultdict(list)
+    for row in kg_train_data.iterrows():
+        h, r, t = row[1]
+        train_kg_dict[h].append((t, r))
+        train_relation_dict[r].append((h, t))
     
+    g = nx.DiGraph()
+    g.add_nodes_from(list(range(0,n_users + n_entities)))
+    for r, nodes in train_relation_dict.items():
+        g.add_edges_from(list(nodes), rel=r)
+   
+    train_queries, train_answers, test_queries = mine_paths(g, train_answer_dict, path_num, hop)
+
     # save files
     stats_file = os.path.join(data_dir, 'stats.txt')
-    train_queries_file = os.path.join(data_dir, 'train-queries-list.pkl')
-    train_answers_file = os.path.join(data_dir, 'train-answers-list.pkl')
-    users_paths_file = os.path.join(data_dir, 'users-paths-list.pkl')
+    train_queries_file = os.path.join(data_dir, 'train_queries.pkl')
+    train_answers_file = os.path.join(data_dir, 'train_answers.pkl')
+    test_queries_file = os.path.join(data_dir, 'test_queries.pkl')
     train_file = os.path.join(data_dir, 'train_user_dict.pkl')
     valid_file = os.path.join(data_dir, 'valid_user_dict.pkl')
     test_file = os.path.join(data_dir, 'test_user_dict.pkl')
@@ -285,11 +241,11 @@ if __name__ == "__main__":
         f.write('numrelations: {}\n'.format(n_relations))
         f.write('numitems: {}'.format(n_items))
     with open(train_queries_file, 'wb') as f:
-        pickle.dump(train_queries_list, f)
+        pickle.dump(train_queries, f)
     with open(train_answers_file, 'wb') as f:
-        pickle.dump(train_answers_list, f)
-    with open(users_paths_file, 'wb') as f:
-        pickle.dump(users_paths_list, f)
+        pickle.dump(train_answers, f)
+    with open(test_queries_file, 'wb') as f:
+        pickle.dump(test_queries, f)
     with open(train_file, 'wb') as f:
         pickle.dump(train_user_dict, f)
     with open(valid_file, 'wb') as f:

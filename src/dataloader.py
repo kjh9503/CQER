@@ -12,13 +12,11 @@ import random
 from src.util import list2tuple, tuple2list, flatten
 
 class TrainDataset(Dataset):
-    def __init__(self, queries, nentity, nitems, nrelation, negative_sample_size, answer):
+    def __init__(self, queries, nentity, negative_sample_size, answer):
         # queries is a list of (query, query_structure) pairs
         self.len = len(queries)
         self.queries = queries
         self.nentity = nentity
-        self.nitems = nitems
-        self.nrelation = nrelation
         self.negative_sample_size = negative_sample_size
         self.count = self.count_frequency(queries, answer)
         self.answer = answer
@@ -77,7 +75,7 @@ class TrainDataset(Dataset):
             count[query] = start + len(answer[query])
         return count
 
-# TODO : sampling
+"""
 class TrainOtherDataset(IterableDataset):
     def __init__(self, users_paths, answers, nentity, nitems, nrelation, negative_sample_size):
         #self.path_samples_num = 10
@@ -99,31 +97,12 @@ class TrainOtherDataset(IterableDataset):
     def __iter__(self):
         for user in self.users_paths:
             length = len(self.users_paths[user])
-            """
+
             if length == 1:
                 continue
             else:
                 batch = self.users_paths[user]
-            """
-            #if length > self.path_samples_num:
-            #    batch = random.sample(self.users_paths[user], self.path_samples_num)
-            if length == 1:
-                continue
-            else:
-                batch = self.users_paths[user]
-            """
-            union_queries, query_structure = self.query_gen(user, batch, self.query_dict)
-            total_answer = set()
-            for queries in union_queries:
-                answer = set()
-                for query in queries[:-1]:
-                    answer = answer.union(self.answers[query])
-                if total_answer == set():
-                    total_answer = total_answer.union(answer)
-                else:
-                    total_answer = total_answer.intersection(answer)
-            answer = list(total_answer)
-            """    
+
             query, query_structure = self.query_gen(user, batch, self.query_dict)
             answer = set()
             for q in query:
@@ -164,25 +143,7 @@ class TrainOtherDataset(IterableDataset):
     @staticmethod
     def count_frequency(answer, start=4):
         return start + len(answer)
-    """
-    # consider 3p and 1p separately first, and then merge
-    @staticmethod
-    def query_gen(user, batch, query_dict):
-        query_3p_list = []
-        for q in batch:
-            if len(q) == 1:
-                query_1p = tuple([user, tuple(q)])
-            elif len(q) == 3:
-                query_3p_list.append(tuple([user, tuple(q)]))
-        union_list = []
-        union_structure_list = []
-        for query in query_3p_list:
-            union_list.append(tuple([query_1p, query, tuple([-1])]))
-            union_structure_list.append(tuple([query_dict[str(len(query_1p[-1]))+'p'],query_dict[str(len(query[-1]))+'p'],tuple(['u'])]))     
-        query = tuple(union_list)
-        query_structure = tuple(union_structure_list)
-        return query, query_structure
-    """
+
     @staticmethod
     def query_gen(user, batch, query_dict):
         q_structure_list = []
@@ -201,15 +162,14 @@ class TrainOtherDataset(IterableDataset):
         worker_id = worker_info.id
         split_size = len(dataset.users_paths) // worker_info.num_workers
         dataset.users_paths = dict(list(dataset.users_paths.items())[worker_id * split_size: (worker_id + 1) * split_size])
-
 """
+
 class TestDataset(Dataset):
-    def __init__(self, queries, nentity, nrelation):
+    def __init__(self, queries, nentity):
         # queries is a list of (query, query_structure) pairs
         self.len = len(queries)
-        self.queries = queries
+        self.queries = list(queries)
         self.nentity = nentity
-        self.nrelation = nrelation
 
     def __len__(self):
         return self.len
@@ -227,8 +187,8 @@ class TestDataset(Dataset):
         query_unflatten = [_[2] for _ in data]
         query_structure = [_[3] for _ in data]
         return negative_sample, query, query_unflatten, query_structure
+    
 """
-        
 class TestDataset(IterableDataset):
     def __init__(self, test_answers, users_paths, nentity, nitems, nrelation):
         self.test_answers = test_answers
@@ -287,28 +247,7 @@ class TestDataset(IterableDataset):
             query = tuple(q_list)
             query_structure = tuple(q_structure_list)
         return query, query_structure
-    """
-    @staticmethod
-    def query_gen(user, batch, query_dict):
-        if len(batch) == 1: # path queries
-            query = tuple([user, batch[0]])
-            query_structure = query_dict[str(len(batch[0]))+'p']
-        else: # intersection queries
-            query_3p_list = []
-            for q in batch:
-                if len(q) == 1:
-                    query_1p = tuple([user, tuple(q)])
-                elif len(q) == 3:
-                    query_3p_list.append(tuple([user, tuple(q)]))
-            union_list = []
-            union_structure_list = []
-            for query in query_3p_list:
-                union_list.append(tuple([query_1p, query, tuple([-1])]))
-                union_structure_list.append(tuple(query_dict[str(len(query_1p))+'p'],query_dict[str(len(query))+'p'],tuple(['u'])))     
-            query = tuple(union_list)
-            query_structure = tuple(union_structure_list)
-        return query, query_structure
-    """
+
     @staticmethod
     def worker_init_fn(_):
         worker_info = torch.utils.data.get_worker_info()
@@ -316,7 +255,7 @@ class TestDataset(IterableDataset):
         worker_id = worker_info.id
         split_size = len(dataset.users_paths) // worker_info.num_workers
         dataset.users_paths = dict(list(dataset.users_paths.items())[worker_id * split_size: (worker_id + 1) * split_size])    
-    
+"""
 class SingledirectionalOneShotIterator(object):
     def __init__(self, dataloader):
         self.iterator = self.one_shot_iterator(dataloader)
