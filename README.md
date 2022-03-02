@@ -8,21 +8,21 @@ Knowledge-aware Logical Query-based Recommendation (KLQR) is a knowledge-aware r
 
 - `data/`
   - `MovieLens1M/`    
-    - `item_index2entity_id.txt`: the mapping from item indices in the raw rating file to entity IDs in the KG;
-    - `kg.txt`: knowledge graph file;
-	- `ratings.dat`: raw rating file of MovieLens1M;
+    - `item_index2entity_id.txt`: the mapping from item indices in the raw rating file to entity IDs in the KG
+    - `kg.txt`: knowledge graph file
+	- `ratings.dat`: raw rating file of MovieLens1M
   - `BookCrossing/`
-    - `item_index2entity_id.txt`: the mapping from item indices in the raw rating file to entity IDs in the KG;
-    - `kg.txt`: knowledge graph file;
-	- `BX-Book-Ratings.csv`: raw rating file of BookCrossing;
+    - `item_index2entity_id.txt`: the mapping from item indices in the raw rating file to entity IDs in the KG
+    - `kg.txt`: knowledge graph file
+	- `BX-Book-Ratings.csv`: raw rating file of BookCrossing
 - `src/`
-  - `data_preparation.py`: Proprocess raw data files;
-  - `dataloader.py`: dataloader for training and testing;
-  - `models.py`: colleciton of models (Embedding Module, Logical Reasoning Module, Prediction Module) in KLQR;
-  - `path_extration.py`: path extraction code for Query Generation Module;
-  - 'util.py': collection of helper funtions;
+  - `data_preparation.py`: Proprocess raw data files
+  - `dataloader.py`: dataloader for training and testing
+  - `models.py`: colleciton of models (Embedding Module, Logical Reasoning Module, Prediction Module) in KLQR
+  - `path_extration.py`: path extraction code for Query Generation Module
+  - 'util.py': collection of helper funtions
 	
-- `main.py`: main code;
+- `main.py`: main code
   
 ### How to run the code
 
