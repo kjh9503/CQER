@@ -1,10 +1,10 @@
 # KLQR
 
-### Introduction
+## Introduction
 
 Knowledge-aware Logical Query-based Recommendation (KLQR) is a knowledge-aware recommendation framework, which consists of four components: (1) Query Generation Module, (2) Embedding Module (3) Logical Reasoning Module, (4) Prediction Module.
 
-### Files
+## Files
 
 - `data/`
   - `BookCrossing/`: Raw dataset of Book-Crossing
@@ -28,11 +28,11 @@ Knowledge-aware Logical Query-based Recommendation (KLQR) is a knowledge-aware r
   - `dataloader.py`: dataloader for training and testing
   - `models.py`: colleciton of models (Embedding Module, Logical Reasoning Module, Prediction Module) in KLQR
   - `path_extration.py`: path extraction code for Query Generation Module
-  - 'util.py': collection of helper funtions
+  - `util.py`: collection of helper funtions
 	
 - `main.py`: main code
   
-### Running the codes with Reproducibility
+## Running the codes with Reproducibility
 
 - BookCrossing 
   ```
