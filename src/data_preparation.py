@@ -7,13 +7,12 @@ from collections import defaultdict
 RATING_FILE_NAME = dict(
     {
         "BookCrossing": "BX-Book-Ratings.csv",
-        "LastFM": "user_artists.dat",
-        "MovieLens_20M": "ratings.csv",
+        "MovieLens1M": "ratings.csv",
     }
 )
 
-SEP = dict({"BookCrossing": ";", "LastFM": "\t", "MovieLens_20M": ","})
-THRESHOLD = dict({"BookCrossing": 0, "LastFM": 0, "MovieLens_20M": 4})
+SEP = dict({"BookCrossing": ";", "MovieLens1M": ","})
+THRESHOLD = dict({"BookCrossing": 0, "MovieLens1M": 4})
 
 
 def read_item_index_to_entity_id_file():
@@ -78,21 +77,7 @@ def convert_rating():
         for item in pos_item_set:
             writer.write("%d\t%d\n" % (user_index, item))
             rating = int(user_item_raw_rating[(user_index_old, item)])
-            raw_rating_writer.write("%d\t%d\t%d\n" % (user_index, item, rating))
-        """
-        unwatched_set = item_set - pos_item_set
-        if user_index_old in user_neg_ratings:
-            unwatched_set -= user_neg_ratings[user_index_old]
-
-        if len(pos_item_set) < len(unwatched_set):
-            neg_items = np.random.choice(
-                list(unwatched_set), size=len(pos_item_set), replace=False
-            )
-        else:
-            neg_items = list(unwatched_set)
-        for item in neg_items:
-            writer.write("%d\t%d\t0\n" % (user_index, item))
-        """
+            raw_rating_writer.write("%d\t%d\t%d\n" % (user_index, item, rating)) 
     writer.close()
     raw_rating_writer.close()
 
@@ -150,7 +135,7 @@ if __name__ == "__main__":
     np.random.seed(2022)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=str, default="movie", help="which dataset to preprocess")
+    parser.add_argument("--dataset", type=str, default="BookCrossing", help="which dataset to preprocess")
     args = parser.parse_args()
     DATASET = args.dataset
 
