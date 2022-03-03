@@ -7,11 +7,11 @@ Knowledge-aware Logical Query-based Recommendation (KLQR) is a knowledge-aware r
 ## Files
 
 - `data/`
-  - `BookCrossing/`: Raw dataset of Book-Crossing
+  - `BookCrossing/`: raw dataset of Book-Crossing
     - `item_index2entity_id.txt`: the mapping from item indices in the raw rating file to entity IDs in the KG
     - `kg.txt`: knowledge graph file
     - `BX-Book-Ratings.csv`: raw rating file of BookCrossing
-  - `MovieLens1M_0.1/`,`MovieLens1M_0.3/`,`MovieLens1M_0.5/`: Preprocessed sparse dataset of MovieLens1M with respective sparsity ratio 10%, 30%, 50%
+  - `MovieLens1M_0.1/`,`MovieLens1M_0.3/`,`MovieLens1M_0.5/`: preprocessed sparse dataset of MovieLens1M with respective sparsity ratio 10%, 30%, 50%
     - `train.txt`: train file
     - `valid.txt`: valid file
     - `test.txt`: test file
@@ -24,7 +24,7 @@ Knowledge-aware Logical Query-based Recommendation (KLQR) is a knowledge-aware r
     - `kg_final.txt`: KG file
     
 - `src/`
-  - `data_preparation.py`: Proprocess raw data files
+  - `data_preparation.py`: proprocess raw data files
   - `dataloader.py`: dataloader for training and testing
   - `models.py`: colleciton of models (Embedding Module, Logical Reasoning Module, Prediction Module) in KLQR
   - `path_extration.py`: path extraction code for Query Generation Module
