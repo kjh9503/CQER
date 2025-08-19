@@ -64,3 +64,17 @@ Conjunctive Query Embedding-based Few-shot Item Recommendation (CQER) is a knowl
   $ python src/path_extraction.py -dataset Yelp_0.1
   $ CUDA_VISIBLE_DEVICES=0 python main.py --cuda --do_train --do_valid --do_test --valid_steps 100 --data_path data/Yelp_0.1 -n 128 -b 128 -d 32 -g 6 -lr 0.01 --l2_lambda 1e-2 --geo beta --beta_mode "(1600,2)" --tasks "1p.2p.3p"
   ```
+
+## Plotting
+
+To reproduce **Figure 5**, which visualizes the relationship between query uncertainty and embedding behavior:
+
+1. **Train and test** the model using the instructions above (make sure to include the `--do_test` flag).
+2. After testing, a JSON file containing **query-wise differential entropy** will be automatically saved in the `logs/` directory.
+3. Run the following command to generate the plot:
+
+   ```bash
+   python plot_entropy.py 
+   ```
+
+4. This will generate a `.png` file that plots the relationship between uncertainty and ranking performance, saved in the same directory.
