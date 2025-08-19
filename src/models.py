@@ -11,7 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from src.dataloader import TestDataset, TrainDataset, SingledirectionalOneShotIterator
-from src.util import dcg_at_k, ndcg_at_k, hit_at_k, recall_at_k, precision_at_k
+from src.util import dcg_at_k, ndcg_at_k, hit_at_k, recall_at_k, precision_at_k, reciprocal_rank
 import random
 import pickle
 import math
@@ -21,6 +21,12 @@ import time
 from tqdm import tqdm
 import os
 import json
+import datetime
+
+
+from scipy.stats import pearsonr
+
+
 
 def Identity(x):
     return x
@@ -76,12 +82,15 @@ class BetaIntersection(nn.Module):
     def forward(self, alpha_embeddings, beta_embeddings):  
         all_embeddings = torch.cat([alpha_embeddings, beta_embeddings], dim=-1)
         layer1_act = F.relu(self.layer1(all_embeddings)) # (num_conj, batch_size, 2 * dim)
-        attention = F.softmax(self.layer2(layer1_act), dim=0) # (num_conj, batch_size, dim)
+
         
+        attention = F.softmax(self.layer2(layer1_act), dim=0) # (num_conj, batch_size, dim)
+
         alpha_embedding = torch.sum(attention * alpha_embeddings, dim=0)
         beta_embedding = torch.sum(attention * beta_embeddings, dim=0)
 
         return alpha_embedding, beta_embedding
+
 
 class BetaProjection(nn.Module):
     def __init__(self, entity_dim, relation_dim, hidden_dim, projection_regularizer, num_layers):
@@ -197,6 +206,7 @@ class KGReasoning(nn.Module):
                 
             self.entity_regularizer = Regularizer(1, 0.05, 1e9) # make sure the parameters of beta embeddings are positive
             self.projection_regularizer = Regularizer(1, 0.05, 1e9) # make sure the parameters of beta embeddings after relation projection are positive
+
 
         if self.geo == 'box':
             self.offset_embedding = nn.Parameter(torch.zeros(nrelation, self.entity_dim))
@@ -424,24 +434,7 @@ class KGReasoning(nn.Module):
             all_idxs.extend(batch_idxs_dict[query_structure])
             all_alpha_embeddings.append(alpha_embedding)
             all_beta_embeddings.append(beta_embedding)
-            """
-            if 'u' in self.query_name_dict[query_structure] and 'DNF' in self.query_name_dict[query_structure]:
-                alpha_embedding, beta_embedding, _ = \
-                    self.embed_query_beta(self.transform_union_query(batch_queries_dict[query_structure], 
-                                                                     query_structure), 
-                                          self.transform_union_structure(query_structure), 
-                                          0)
-                all_union_idxs.extend(batch_idxs_dict[query_structure])
-                all_union_alpha_embeddings.append(alpha_embedding)
-                all_union_beta_embeddings.append(beta_embedding)
-            else:
-                alpha_embedding, beta_embedding, _ = self.embed_query_beta(batch_queries_dict[query_structure], 
-                                                                           query_structure, 
-                                                                           0)
-                all_idxs.extend(batch_idxs_dict[query_structure])
-                all_alpha_embeddings.append(alpha_embedding)
-                all_beta_embeddings.append(beta_embedding)
-            """
+
         # positive embedding, negative embedding -> positive sample embedding, negative sample embedding
         # alpha embedding + beta embedding = all_dists -> query embedding
         if len(all_alpha_embeddings) > 0:
@@ -500,7 +493,6 @@ class KGReasoning(nn.Module):
             negative_logit = torch.cat([negative_logit, negative_union_logit], dim=0)
         else:
             negative_logit = None
-
         return positive_logit, negative_logit, subsampling_weight, all_idxs+all_union_idxs, all_alpha_embeddings, all_beta_embeddings, negative_embedding
 
     def transform_union_query(self, queries, query_structure):
@@ -710,7 +702,6 @@ class KGReasoning(nn.Module):
             positive_sample = positive_sample.cuda()
             negative_sample = negative_sample.cuda()
             subsampling_weight = subsampling_weight.cuda()
-
         positive_logit, negative_logit, subsampling_weight, _, _, _, _ = model(positive_sample, negative_sample, subsampling_weight, batch_queries_dict, batch_idxs_dict)
 
         # loss 계산
@@ -746,13 +737,25 @@ class KGReasoning(nn.Module):
         step = 0
         total_steps = len(test_dataloader)
         logs = collections.defaultdict(list)
+        rec_items = set()
+        user_set = set()
+
+        ENTROPIES = []
+        NDCGS = []
+        HITS = []
+        RECALLS = []
+        cnt = 0
+        
+        # query_structures별 entropy 저장을 위한 딕셔너리
+        entropy_by_structure = collections.defaultdict(list)
+
         with torch.no_grad():
             # test query 수 만큼 iterate
             for negative_sample, queries, queries_unflatten, query_structures in tqdm(test_dataloader, disable=not args.print_on_screen):
                 # 모든 entity는 negative sample임. -> negative sample을 바꾸면 원하는 entity에 대해서만 evaluate 가능할듯..??
                 batch_queries_dict = collections.defaultdict(list)
                 batch_idxs_dict = collections.defaultdict(list)
-                for i, query in enumerate(queries):
+                for i, query in enumerate(queries): #query = [12085, 0, 12085, 0, 2, 4, 12085, 0, 3, 5, 12085, 0, 1, 0]
                     batch_queries_dict[query_structures[i]].append(query)
                     batch_idxs_dict[query_structures[i]].append(i)
                 for query_structure in batch_queries_dict:
@@ -762,10 +765,23 @@ class KGReasoning(nn.Module):
                         batch_queries_dict[query_structure] = torch.LongTensor(batch_queries_dict[query_structure])
                 if args.cuda:
                     negative_sample = negative_sample.cuda()
+                
+                # if ('e', ('r',)) in batch_queries_dict :
+                    # continue
 
                 _, negative_logit, _, idxs, alpha_embeddings, beta_embeddings, entity_embeddings = model(None, negative_sample, None, batch_queries_dict, batch_idxs_dict)
-                # entity_embeddings : beta embedding of entities
                 
+                # ==================================== differential entropy ===============
+                if len(alpha_embeddings.size()) == 3 :
+                    alpha_embeddings = alpha_embeddings.squeeze(1)
+                    beta_embeddings = beta_embeddings.squeeze(1)
+                
+                dists = torch.distributions.beta.Beta(alpha_embeddings, beta_embeddings)
+                diff_entropy = dists.entropy()
+                entropy_mean = diff_entropy.mean(dim=1).detach().cpu().tolist() #(B, )
+
+                # ===================================================================================
+                # entity_embeddings : beta embedding of entities
                 queries_unflatten = [queries_unflatten[i] for i in idxs]
                 query_structures = [query_structures[i] for i in idxs]
                 
@@ -777,32 +793,65 @@ class KGReasoning(nn.Module):
 
                     if user not in answers:
                         #print('user',user,'not available')
+                        cnt += 1
                         continue
                     answer = set(list(answers[user]))
-
+                    user_set.add(user)
                     negative_logit = negative_logit[:,0:args.nitems]
                     negative_logit[:,total_train_interactions[user]] = float("-inf")
-
                     argsort = torch.argsort(negative_logit, dim=1, descending=True)[0].detach().cpu().tolist()
-                    K_list = [10,5,20,50,100]
+                    
+
+                    K_list = [10,20,50,100]
                     hits = []
                     precision = []
                     recall = []
                     ndcg = []
+                    rr = []
 
                     r = []
+                    mrr_r = []
                     max_K = max(K_list)
+                    # ========================================================
+                    # Coverage
+                    argsort_top10 = argsort[:10]
+                    # print(user, argsort_top10)
+                    rec_items.update(set(argsort_top10))
+                    # ========================================================
                     for i in argsort[:max_K]:
                         if i in answer:
                             r.append(1)
                         else:
                             r.append(0)
+                    
+                    # MRR 계산: answer에 있는 아이템들 중 argsort에서 가장 높은 순위에 있는 것의 순위 찾기
+                    mrr_rank = float('inf')
+                    for i, item in enumerate(argsort):
+                        if item in answer:
+                            mrr_rank = i + 1  # 1-based ranking
+                            break
+                    
+                    # if mrr_rank == float('inf'):
+                    #     rr.append(0.0)  # answer에 있는 아이템이 하나도 없으면 0
+                    # else:
+                    rr.append(1.0 / mrr_rank)
+
 
                     for K in K_list:
                         precision.append(precision_at_k(r, K))
                         recall.append(recall_at_k(r, K, len(answer)))
                         ndcg.append(ndcg_at_k(r, K, answer))
                         hits.append(hit_at_k(r, K))
+                    # =============================================================
+                    ENTROPIES.append(entropy_mean[idx])
+                    NDCGS.append(ndcg_at_k(r, 10, answer))
+                    HITS.append(hit_at_k(r, 10))
+                    RECALLS.append(recall_at_k(r, 10, len(answer)))
+                    
+                    # query_structures별 entropy 저장
+                    current_structure = str(query_structures[idx])
+                    entropy_by_structure[current_structure].append(entropy_mean[idx])
+                    # =============================================================
 
 
                     logs[user].append({
@@ -810,7 +859,9 @@ class KGReasoning(nn.Module):
                         'PRECISION': precision,
                         'RECALL': recall,
                         'nDCG': ndcg,
+                        'MRR' : rr
                     })
+
 
                 if step % args.test_log_steps == 0:
                     logging.info('Evaluating the model... (%d/%d)' % (step, total_steps))
@@ -818,6 +869,17 @@ class KGReasoning(nn.Module):
 
                 step += 1
 
+            print(f'COVERAGE : {len(rec_items)} / {args.nitems}, NumUsers : {len(user_set)}')
+            print(len(ENTROPIES), len(NDCGS)+cnt)
+            corr_ndcg, pval = pearsonr(ENTROPIES, NDCGS)
+            corr_hit, pval = pearsonr(ENTROPIES, HITS)
+            corr_recall, pval = pearsonr(ENTROPIES, RECALLS)
+            print('CORRELATION NDCG: ', np.mean(corr_ndcg))
+            print('CORRELATION HITS: ', np.mean(corr_hit))
+            print('CORRELATION RECALL: ', np.mean(corr_recall))
+            
+
+        # exit()
         metrics = collections.defaultdict(lambda: collections.defaultdict(int))
 
         for user in logs:
@@ -825,4 +887,31 @@ class KGReasoning(nn.Module):
                 #metrics[user][metric] = sum([log[metric] for log in logs[user]])/len(logs[user])
                 metrics[user][metric] = np.sum([[at_K for at_K in log[metric]] for log in logs[user]], axis=0) / len(logs[user])
             #metrics[user]['num_queries'] = len(logs[user])
+        
+        # entropy 데이터를 JSON 파일로 저장
+        entropy_results = {
+            'entropy_by_structure': dict(entropy_by_structure),
+            'summary_stats': {
+                'total_queries': len(ENTROPIES),
+                'total_users': len(user_set),
+                'structure_counts': {k: len(v) for k, v in entropy_by_structure.items()}
+            }
+        }
+        
+        # JSON 파일 저장
+        import json
+        import os
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"entropy_results_{mode}_{timestamp}.json"
+        
+        # logs 디렉토리가 없으면 생성
+        os.makedirs("logs", exist_ok=True)
+        
+        with open(os.path.join("logs", filename), 'w', encoding='utf-8') as f:
+            json.dump(entropy_results, f, indent=2, ensure_ascii=False, default=str)
+        
+        print(f"Entropy results saved to: logs/{filename}")
+        
         return metrics
+
+
